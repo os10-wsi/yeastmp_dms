@@ -230,11 +230,24 @@ Two things to know when reading the strips:
   and clipped to the outline of the shapes, which is the only way to do that
   for a coil without visible seams.
 
-**Where the structure comes from.** A file or a folder searched recursively,
-matched to a dataset by filename — `tna1.pdb`, `tna1_alphafold.cif` and
-`TNA1.dssp` all belong to dataset `tna1`, and a lone structure with a lone
-dataset is paired whatever it is called. Four formats are read directly, with
-no extra dependencies:
+**Where the structure comes from.** A file, or a folder searched recursively.
+Each structure is matched to a dataset **by filename**: the dataset name is the
+fitness table's stem with `_fitness_estimation`, `_fitness` or `_dms` removed,
+and a structure belongs to it if its own stem either *is* that name or *starts
+with* it followed by a separator. Case is ignored on both sides, so
+`tna1.pdb`, `TNA1.dssp`, `tna1_alphafold.cif` and `tna1-af2.pdb` all belong to
+`tna1_fitness_estimation.tsv`, while `tna10.pdb` does not — the character after
+the name has to be a separator, not another digit or letter, which is what
+stops `tna1` from claiming a different gene's structure.
+
+Where one dataset has several candidates, a file named *exactly* after it wins
+(`tna1.ss` beats `tna1_alphafold.pdb`), and between equally well-named ones the
+format carrying the most secondary structure wins, in the table order below. A
+lone structure with a lone dataset is paired whatever either is called, so
+`--input one.tsv --structures model.pdb` does what it reads like. Anything
+unmatched is reported by name at the start of the run.
+
+Four formats are read directly, with no extra dependencies:
 
 | | |
 |---|---|

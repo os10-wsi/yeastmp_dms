@@ -394,3 +394,18 @@ def test_the_most_informative_format_wins_when_several_match(tmp_path):
 
     without_dssp = [p for p in candidates if p.suffix != ".dssp"]
     assert match_structures(without_dssp, ["tna1", "other"])["tna1"].name == "tna1.pdb"
+
+
+def test_the_exact_name_beats_a_better_format_under_a_prefixed_name(tmp_path):
+    # Naming a file tna1.ss is how you say "this is the structure for tna1";
+    # it must not lose to a tna1_alphafold.pdb lying beside it just because a
+    # PDB carries more than a bare string.
+    paired = match_structures(
+        [tmp_path / "tna1_alphafold.pdb", tmp_path / "tna1.ss"], ["tna1"]
+    )
+    assert paired["tna1"].name == "tna1.ss"
+
+
+def test_a_prefixed_name_is_still_used_when_nothing_matches_exactly(tmp_path):
+    paired = match_structures([tmp_path / "tna1_alphafold.pdb"], ["tna1", "other"])
+    assert paired["tna1"].name == "tna1_alphafold.pdb"

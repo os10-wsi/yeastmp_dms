@@ -391,8 +391,11 @@ def match_structures(paths: list[Path], names: list[str]) -> dict[str, Path]:
     dataset, which are paired whatever they are called -- that is what makes
     ``--input one.tsv --structures model.pdb`` behave the way it reads.
 
-    Where one dataset has several candidates, the format that carries the most
-    secondary-structure information wins, in the order of
+    Where one dataset has several candidates, a file named exactly after it
+    wins -- naming a file ``tna1.ss`` is how you say "this is the structure for
+    tna1", and it should not lose to a ``tna1_alphafold.pdb`` that happens to
+    be lying beside it.  Between candidates equally well named, the format that
+    carries the most secondary-structure information wins, in the order of
     :data:`STRUCTURE_PATTERNS`: a DSSP file states every residue's state, a
     coordinate file only its helices and sheets, and a bare string has no
     sequence to check the numbering against.
@@ -401,9 +404,6 @@ def match_structures(paths: list[Path], names: list[str]) -> dict[str, Path]:
         return {names[0]: paths[0]}
 
     order = {p.lstrip("*"): index for index, p in enumerate(STRUCTURE_PATTERNS)}
-
-    def preference(path: Path) -> tuple[int, str]:
-        return (order.get(path.suffix.lower(), len(order)), str(path))
 
     out: dict[str, Path] = {}
     for name in names:
@@ -415,7 +415,14 @@ def match_structures(paths: list[Path], names: list[str]) -> dict[str, Path]:
             or (stem.startswith(key) and not stem[len(key) :][:1].isalnum())
         ]
         if candidates:
-            out[name] = min(candidates, key=preference)
+            out[name] = min(
+                candidates,
+                key=lambda path: (
+                    path.stem.lower() != key,
+                    order.get(path.suffix.lower(), len(order)),
+                    str(path),
+                ),
+            )
     return out
 
 
