@@ -17,10 +17,11 @@ from .dataset import DatasetError
 from .matrix import AA_ORDERS
 from .normalise import NormalisationError
 from .pipeline import PipelineConfig, run
+from .structure import STRUCTURE_PATTERNS, StructureError
 
 __all__ = ["build_parser", "config_from_args", "main"]
 
-_PATH_FIELDS = {"input", "output"}
+_PATH_FIELDS = {"input", "output", "structures"}
 _TUPLE_FIELDS = {"patterns", "formats"}
 
 
@@ -146,6 +147,55 @@ def build_parser() -> argparse.ArgumentParser:
         help="render figures only, skip the normalised output tables",
     )
 
+    group = parser.add_argument_group("secondary structure")
+    group.add_argument(
+        "--structures", type=Path, metavar="PATH",
+        help=helptext(
+            "structures",
+            "structure file, or folder searched recursively, holding the "
+            "secondary structure to draw under the heatmap; accepts "
+            + ", ".join(p.lstrip("*") for p in STRUCTURE_PATTERNS)
+            + ", and is matched to a dataset by filename",
+        ),
+    )
+    group.add_argument(
+        "--no-structure-tracks", dest="structure_tracks", action="store_false",
+        default=None, help="ignore --structures and draw the heatmap alone",
+    )
+    group.add_argument(
+        "--structure-residue", metavar="AA",
+        help=helptext(
+            "structure_residue",
+            "one-letter residue whose substitution colours the first strip",
+        ),
+    )
+    group.add_argument(
+        "--structure-mean-with-stops", dest="structure_mean_include_stops",
+        action="store_true", default=None,
+        help=helptext(
+            "structure_mean_include_stops",
+            "average nonsense variants into the mean strip as well as "
+            "substitutions",
+        ),
+    )
+    group.add_argument(
+        "--structure-offset", type=int, metavar="N",
+        help=helptext(
+            "structure_offset",
+            "add N to the structure's residue numbers to reach dataset "
+            "positions; by default the offset is found by matching the model's "
+            "sequence to the assayed protein",
+        ),
+    )
+    group.add_argument(
+        "--structure-chain", metavar="ID",
+        help=helptext(
+            "structure_chain",
+            "chain to read from a multi-chain structure; the first chain "
+            "otherwise",
+        ),
+    )
+
     group = parser.add_argument_group("distribution figure")
     group.add_argument(
         "--no-distribution", dest="distribution", action="store_false", default=None,
@@ -251,7 +301,7 @@ def main(argv: list[str] | None = None) -> int:
     config = config_from_args(args)
     try:
         results = run(config)
-    except (DatasetError, NormalisationError, ValueError) as exc:
+    except (DatasetError, NormalisationError, StructureError, ValueError) as exc:
         logging.getLogger("dms_heatmap").error("%s", exc)
         return 1
 

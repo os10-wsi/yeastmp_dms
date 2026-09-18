@@ -55,6 +55,44 @@ tick_every = 10           # position axis tick interval
 mark_wild_type = true     # dot the wild-type residue in each column
 formats = ["png", "pdf"]
 
+# --- secondary structure --------------------------------------------------
+# Two SSDraw-style strips under each block of the heatmap, sharing its x axis:
+# helices as coiled ribbons, strands as arrows, loops as thin bars, and a
+# hairline where the model does not cover the position. Both carry the heatmap's
+# own colour scale, so a red helix turn means what a red cell means.
+#
+# A file, or a folder searched recursively, matched to a dataset by filename
+# (tna1.pdb, tna1_alphafold.cif, TNA1.dssp all belong to dataset tna1).
+# Accepts .dssp, .pdb, .ent, .cif, .mmcif and .ss; a coordinate file with no
+# HELIX/SHEET or _struct_conf records needs mkdssp on PATH. Unset = no strips.
+# structures = "data/structures"
+
+# false ignores `structures` entirely.
+structure_tracks = true
+
+# The residue whose substitution colours the first strip. Proline is the
+# default because it is the one substitution whose effect is a statement about
+# the backbone: it cannot donate a backbone hydrogen bond and it kinks the
+# chain, so an intolerant helix or strand shows up as a red element while the
+# loops either side stay pale.
+structure_residue = "P"
+
+# Average nonsense variants into the second (mean) strip as well as
+# substitutions. Off by default: a stop is not one substitution among twenty --
+# its effect grows with how much of the protein it removes, so including it
+# would tilt every position's mean by an amount that says more about where the
+# position sits in the sequence than about the residue.
+structure_mean_include_stops = false
+
+# Added to the structure's residue numbers to reach dataset positions. Unset
+# (the default) finds the offset by matching the model's own sequence to the
+# assayed protein, and refuses to draw a structure it cannot place -- a
+# silently shifted structure track is worse than none.
+# structure_offset = 0
+
+# Which chain to read from a multi-chain structure. Unset takes the first.
+# structure_chain = "A"
+
 # --- distribution figure --------------------------------------------------
 # Fitness histogram of the three variant classes: missense (blue), synonymous
 # (green), nonsense (red). This is the normalisation's own sanity check --

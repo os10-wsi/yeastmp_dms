@@ -29,6 +29,7 @@ __all__ = [
     "RED_RAMP",
     "NEUTRAL",
     "MISSING",
+    "SS_OUTLINE",
     "WT_MARK",
     "fitness_cmap",
 ]
@@ -57,6 +58,12 @@ MISSING = "#c6c5bf"
 
 #: Marker ink for the wild-type residue at each position.
 WT_MARK = "#0b0b0b"
+
+#: Outline of the secondary-structure shapes.  Ink, not a hue: the shapes are
+#: already carrying a fitness colour inside them, and a coloured outline would
+#: be read as a second encoding.  Dark enough to define a hairline loop against
+#: the surface, light enough not to out-weigh the fill on a thin coil.
+SS_OUTLINE = "#3f3e3b"
 
 
 #: Colours for the three variant classes in the distribution plot.

@@ -9,7 +9,15 @@ import pandas as pd
 
 from .normalise import missense_mask, nonsense_mask
 
-__all__ = ["FitnessMatrix", "AA_ORDERS", "build_matrix"]
+__all__ = [
+    "AA_NAMES",
+    "AA_ORDERS",
+    "STOP",
+    "FitnessMatrix",
+    "build_matrix",
+    "position_means",
+    "substitution_profile",
+]
 
 STOP = "*"
 
@@ -21,6 +29,17 @@ _CHEMISTRY = "AVLIMFWYSTNQCGPHKRDE"
 AA_ORDERS: dict[str, str] = {
     "chemistry": _CHEMISTRY,
     "alphabetical": "".join(sorted(_CHEMISTRY)),
+}
+
+#: Residue names, for captions -- "the proline substitution" reads where
+#: "the P substitution" has to be decoded.
+AA_NAMES: dict[str, str] = {
+    "A": "alanine", "C": "cysteine", "D": "aspartate", "E": "glutamate",
+    "F": "phenylalanine", "G": "glycine", "H": "histidine", "I": "isoleucine",
+    "K": "lysine", "L": "leucine", "M": "methionine", "N": "asparagine",
+    "P": "proline", "Q": "glutamine", "R": "arginine", "S": "serine",
+    "T": "threonine", "V": "valine", "W": "tryptophan", "Y": "tyrosine",
+    STOP: "nonsense",
 }
 
 
@@ -56,6 +75,45 @@ class FitnessMatrix:
         """All measured cells as a flat array, for percentile limits."""
         flat = self.values.to_numpy(dtype=float).ravel()
         return flat[np.isfinite(flat)]
+
+
+def substitution_profile(matrix: FitnessMatrix, residue: str) -> pd.Series:
+    """The matrix row for one mutant residue, as fitness by position.
+
+    This is a slice of the plotted grid, not a re-derivation, so a value in the
+    profile is the same number as the cell above it in the figure.  Positions
+    where that substitution was not assayed -- including positions whose
+    wild-type residue is already ``residue``, which have no such substitution to
+    make -- come back as ``NaN``.
+    """
+    residue = residue.upper()
+    if residue not in matrix.values.index:
+        raise ValueError(
+            f"no {residue!r} row in the matrix; rows are "
+            f"{''.join(matrix.residues)}"
+        )
+    return matrix.values.loc[residue].astype(float)
+
+
+def position_means(matrix: FitnessMatrix, include_stops: bool = False) -> pd.Series:
+    """Mean measured fitness at each position, over substitutions.
+
+    The mean is taken over whatever was measured at that position, so it rests
+    on a different number of substitutions from one position to the next --
+    coverage in these datasets is uneven, and the median position carries about
+    17 of the 19 possible substitutions.  Positions with nothing measured come
+    back as ``NaN`` rather than 0.
+
+    Nonsense variants are excluded by default.  A stop is not one substitution
+    among twenty: it truncates the protein, its effect grows with how much it
+    removes, and averaging it in would drag every position's mean towards the
+    nonsense anchor by an amount that says more about where the position sits in
+    the sequence than about the residue.
+    """
+    grid = matrix.values
+    if not include_stops and STOP in grid.index:
+        grid = grid.drop(index=STOP)
+    return grid.mean(axis=0, skipna=True).astype(float)
 
 
 def _wt_residue_series(

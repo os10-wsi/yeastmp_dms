@@ -3,11 +3,18 @@ PIP    ?= .venv/bin/pip
 INPUT  ?= data/raw
 OUTPUT ?= results
 
+# Secondary-structure strips are drawn only if there is something to draw, so
+# data/structures is picked up when it exists and passed to nothing when it
+# does not -- that way `make all` works either way.
+STRUCTURES ?= data/structures
+STRUCTURE_FLAG = $(if $(wildcard $(STRUCTURES)),--structures $(STRUCTURES),)
+
 .PHONY: help venv install all filtered shared facet test clean
 
 help:
 	@echo "make install   create .venv and install the package (editable, with dev deps)"
-	@echo "make all       run the pipeline over \$$INPUT (default: $(INPUT))"
+	@echo "make all       run the pipeline over \$$INPUT (default: $(INPUT)),"
+	@echo "               with the secondary structure from \$$STRUCTURES if it exists"
 	@echo "make filtered  same, but keep only variants with >=20 input reads in every replicate"
 	@echo "make shared    same as 'all', with one colour scale shared across all datasets"
 	@echo "make facet     same as 'all', with the distribution split into one panel per class"
@@ -21,19 +28,20 @@ install: venv
 	$(PIP) install -e ".[dev]"
 
 all:
-	$(PYTHON) -m dms_heatmap.cli --config config/default.toml --input $(INPUT) --output $(OUTPUT)
+	$(PYTHON) -m dms_heatmap.cli --config config/default.toml --input $(INPUT) \
+		--output $(OUTPUT) $(STRUCTURE_FLAG)
 
 filtered:
 	$(PYTHON) -m dms_heatmap.cli --config config/default.toml --input $(INPUT) \
-		--output $(OUTPUT)/filtered --min-input-count 20 --min-replicates 3
+		--output $(OUTPUT)/filtered $(STRUCTURE_FLAG) --min-input-count 20 --min-replicates 3
 
 shared:
 	$(PYTHON) -m dms_heatmap.cli --config config/default.toml --input $(INPUT) \
-		--output $(OUTPUT)/shared --shared-scale
+		--output $(OUTPUT)/shared $(STRUCTURE_FLAG) --shared-scale
 
 facet:
 	$(PYTHON) -m dms_heatmap.cli --config config/default.toml --input $(INPUT) \
-		--output $(OUTPUT)/facet --distribution-layout facet
+		--output $(OUTPUT)/facet $(STRUCTURE_FLAG) --distribution-layout facet
 
 test:
 	$(PYTHON) -m pytest -q

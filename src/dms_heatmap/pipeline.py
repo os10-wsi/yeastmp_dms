@@ -24,13 +24,21 @@ from . import __version__
 from .dataset import (
     Dataset,
     DatasetError,
+    dataset_name,
     discover,
     filter_by_input_count,
     input_count_columns,
     load,
 )
 from .distribution import DistributionStyle, render_distribution
-from .matrix import FitnessMatrix, build_matrix
+from .matrix import (
+    AA_NAMES,
+    STOP,
+    FitnessMatrix,
+    build_matrix,
+    position_means,
+    substitution_profile,
+)
 from .normalise import (
     Anchors,
     NormalisationError,
@@ -41,6 +49,15 @@ from .normalise import (
 )
 from .plot import HeatmapStyle, render_heatmap, save_figure
 from .scale import WT_FITNESS, ColourScale
+from .structure import (
+    UNMODELLED,
+    SecondaryStructure,
+    StructureError,
+    discover_structures,
+    match_structures,
+    read_structure,
+)
+from .track import StructureTrack
 
 __all__ = ["PipelineConfig", "DatasetResult", "run"]
 
@@ -92,6 +109,14 @@ class PipelineConfig:
     mark_wild_type: bool = True
     formats: tuple[str, ...] = ("png", "pdf")
 
+    # Secondary-structure strips under the heatmap
+    structures: Path | None = None
+    structure_tracks: bool = True
+    structure_residue: str = "P"
+    structure_mean_include_stops: bool = False
+    structure_offset: int | None = None
+    structure_chain: str | None = None
+
     # Distribution figure
     distribution: bool = True
     distribution_bins: int = 60
@@ -121,6 +146,7 @@ class PipelineConfig:
         out = asdict(self)
         out["input"] = str(self.input)
         out["output"] = str(self.output)
+        out["structures"] = str(self.structures) if self.structures else None
         out["patterns"] = list(self.patterns)
         out["formats"] = list(self.formats)
         return out
@@ -146,6 +172,11 @@ class DatasetResult:
     outputs: list[Path] = field(default_factory=list)
     scale: ColourScale | None = None
 
+    # Secondary structure, when one was found for this dataset.  Held on the
+    # result so the render pass can draw it and the manifest can record it.
+    structure: SecondaryStructure | None = None
+    tracks: tuple[StructureTrack, ...] = ()
+
     def as_dict(self) -> dict:
         return {
             "dataset": self.name,
@@ -161,6 +192,14 @@ class DatasetResult:
             "read_depth": self.read_depth,
             "class_distribution": self.class_distribution,
             "colour_scale": self.scale.as_dict() if self.scale else None,
+            "secondary_structure": (
+                {
+                    **self.structure.as_dict(),
+                    "tracks": {t.key: t.as_dict() for t in self.tracks},
+                }
+                if self.structure is not None
+                else None
+            ),
             "warnings": self.warnings,
             "outputs": [str(p) for p in self.outputs],
         }
@@ -266,6 +305,133 @@ def _prepare(dataset: Dataset, config: PipelineConfig):
     return table, matrix, result
 
 
+def _pair_structures(paths: list[Path], config: PipelineConfig) -> dict[str, Path]:
+    """Work out which structure file belongs to which dataset.
+
+    Done up front from the filenames -- :func:`dataset_name` derives the same
+    name the loader will -- so the run can say which datasets will get strips
+    before spending time normalising any of them.
+    """
+    if not config.structure_tracks or config.structures is None:
+        return {}
+
+    found = discover_structures(config.structures)
+    if not found:
+        log.warning(
+            "no structure files under %s; the heatmaps will have no "
+            "secondary-structure strips",
+            config.structures,
+        )
+        return {}
+
+    names = [dataset_name(p) for p in paths]
+    paired = match_structures(found, names)
+    unpaired = sorted(set(names) - set(paired))
+    if unpaired:
+        log.warning(
+            "no structure matched by filename for: %s (name a structure after the "
+            "dataset, e.g. %s.pdb)",
+            ", ".join(unpaired),
+            unpaired[0],
+        )
+    return paired
+
+
+def _structure_for(
+    path: Path, dataset: Dataset, config: PipelineConfig, warnings: list[str]
+) -> SecondaryStructure | None:
+    """Read and place the structure for one dataset.
+
+    A structure that cannot be read or cannot be placed on the protein is a
+    warning, not a failure: the heatmap is the result and the strips annotate
+    it, so the figure is still worth having without them.
+    """
+    try:
+        structure = read_structure(
+            path, chain=config.structure_chain, name=dataset.name
+        )
+        structure = structure.aligned_to(
+            dataset.wt_sequence, offset=config.structure_offset
+        )
+    except StructureError as exc:
+        warnings.append(f"no secondary-structure strips: {exc}")
+        return None
+    # How it was read and placed is provenance and lives in the manifest; only
+    # what the reader should doubt is worth a warning.
+    warnings.extend(structure.warnings)
+    return structure
+
+
+def _build_tracks(
+    matrix: FitnessMatrix, config: PipelineConfig, warnings: list[str]
+) -> tuple[StructureTrack, ...]:
+    """The two colourings drawn on the structure: one residue, and the mean."""
+    residue = config.structure_residue.upper()
+    try:
+        profile = substitution_profile(matrix, residue)
+    except ValueError as exc:
+        warnings.append(f"no {residue} strip: {exc}")
+        profile = None
+
+    name = AA_NAMES.get(residue, residue)
+    # --no-stops leaves the nonsense row out of the grid entirely, so there is
+    # nothing to average in even when asked.  Follow the grid rather than the
+    # request, so the caption cannot claim stops it does not have.
+    stops = config.structure_mean_include_stops and STOP in matrix.values.index
+    if config.structure_mean_include_stops and not stops:
+        warnings.append(
+            "structure_mean_include_stops has no effect with include_stops off: "
+            "the nonsense row is not in the grid to average in"
+        )
+
+    tracks = []
+    if profile is not None:
+        tracks.append(
+            StructureTrack(
+                key=f"substitution_{residue}",
+                label=f"→{residue}",
+                values=profile,
+                description=f"the {name} substitution at each position",
+            )
+        )
+    tracks.append(
+        StructureTrack(
+            key="position_mean",
+            label="mean",
+            values=position_means(matrix, include_stops=stops),
+            description=(
+                "the mean of the substitutions measured at each position"
+                + (", nonsense included" if stops else ", nonsense excluded")
+            ),
+        )
+    )
+    return tuple(tracks)
+
+
+def _write_structure_table(
+    matrix: FitnessMatrix,
+    structure: SecondaryStructure,
+    tracks: tuple[StructureTrack, ...],
+    dataset: Dataset,
+    out_dir: Path,
+) -> list[Path]:
+    """Write the numbers behind the strips, one row per position."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    positions = matrix.positions
+    codes = structure.code_map()
+    frame = pd.DataFrame(
+        {
+            "pos": positions,
+            "wt_aa": matrix.wt_residues.reindex(positions).to_numpy(),
+            "secondary_structure": [codes.get(int(p), UNMODELLED) for p in positions],
+            **{t.key: t.values.reindex(positions).to_numpy() for t in tracks},
+        }
+    )
+    out = out_dir / f"{dataset.name}.structure.tsv"
+    frame.to_csv(out, sep="\t", index=False, float_format="%.6g")
+    return [out]
+
+
 def _write_tables(
     table: pd.DataFrame, matrix: FitnessMatrix, dataset: Dataset, out_dir: Path
 ) -> list[Path]:
@@ -347,6 +513,8 @@ def run(config: PipelineConfig) -> list[DatasetResult]:
         )
     log.info("found %d dataset file(s) under %s", len(paths), config.input)
 
+    structures = _pair_structures(paths, config)
+
     config.output.mkdir(parents=True, exist_ok=True)
     tables_dir = config.output / "tables"
     figures_dir = config.output / "figures"
@@ -370,11 +538,32 @@ def run(config: PipelineConfig) -> list[DatasetResult]:
             len(dataset.rep_columns),
             100 * result.coverage,
         )
+        structure_path = structures.get(dataset.name)
+        if structure_path is not None:
+            result.structure = _structure_for(
+                structure_path, dataset, config, result.warnings
+            )
+            if result.structure is not None:
+                result.tracks = _build_tracks(matrix, config, result.warnings)
+                log.info(
+                    "%s: secondary structure from %s, %d residue(s), offset %+d",
+                    dataset.name,
+                    structure_path.name,
+                    len(result.structure),
+                    result.structure.offset,
+                )
+
         for warning in result.warnings:
             log.warning("%s: %s", dataset.name, warning)
 
         if config.write_tables:
             result.outputs.extend(_write_tables(table, matrix, dataset, tables_dir))
+            if result.structure is not None:
+                result.outputs.extend(
+                    _write_structure_table(
+                        matrix, result.structure, result.tracks, dataset, tables_dir
+                    )
+                )
         if config.distribution:
             # Independent of the heatmap's colour limits, so it is rendered
             # here and the (large) normalised table can be released.
@@ -419,6 +608,8 @@ def run(config: PipelineConfig) -> list[DatasetResult]:
             style=style,
             title=f"{dataset.name} - deep mutational scanning fitness",
             subtitle=_subtitle(config, result, scale),
+            structure=result.structure,
+            tracks=result.tracks,
         )
         written = save_figure(figure, figures_dir / dataset.name, formats=config.formats)
         result.outputs.extend(written)
@@ -454,6 +645,15 @@ def _write_summary(
                 "missense_median": _class_median(r, "missense"),
                 "vmin": round(r.scale.vmin, 4) if r.scale else None,
                 "vmax": round(r.scale.vmax, 4) if r.scale else None,
+                # A wrong numbering offset ruins the structure strips without
+                # making the figure look broken, so it is surfaced next to the
+                # other sanity checks rather than left in the manifest.
+                "structure_offset": r.structure.offset if r.structure else None,
+                "structure_identity": (
+                    round(r.structure.identity, 4)
+                    if r.structure and r.structure.identity is not None
+                    else None
+                ),
                 "min_replicate_r": (
                     round(min(r.replicate_correlations.values()), 4)
                     if r.replicate_correlations

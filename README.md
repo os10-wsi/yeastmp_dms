@@ -24,7 +24,8 @@ QC record.
   - [2. Normalise](#2-normalise-wild-type--1-nonsense--0)
   - [3. Colour](#3-colour)
   - [4. Render the heatmap](#4-render-the-heatmap)
-  - [5. Render the distribution](#5-render-the-distribution)
+  - [5. Draw the secondary structure](#5-draw-the-secondary-structure)
+  - [6. Render the distribution](#6-render-the-distribution)
 - [Outputs](#outputs)
 - [Configuration](#configuration)
 - [Two things worth knowing about the input data](#two-things-worth-knowing-about-the-input-data)
@@ -50,7 +51,8 @@ pip install -e ".[dev]"
 ```
 
 Raw data is not in version control (see `.gitignore`); drop the `*.tsv`
-datasets into `data/raw/` — subfolders are fine.
+datasets into `data/raw/` — subfolders are fine. Structures, if you have them,
+go in `data/structures/` named after the gene (`tna1.pdb`, `tna1.dssp`, …).
 
 ## Usage
 
@@ -67,6 +69,9 @@ dms-heatmap --input data/raw --output results --center none
 # a single file, PNG only, wider blocks
 dms-heatmap -i data/raw/tna1_fitness_estimation.tsv -o results \
             --formats png --block-size 80
+
+# with the secondary structure drawn under each block, coloured by fitness
+dms-heatmap --input data/raw --output results --structures data/structures
 
 # settings from a file (see config/default.toml)
 dms-heatmap --config config/default.toml
@@ -183,7 +188,79 @@ protein render at the same scale and can be laid side by side.
   stay as empty columns rather than being closed up, so the position axis
   always means the real residue number.
 
-### 5. Render the distribution
+### 5. Draw the secondary structure
+
+Given `--structures`, each block of the heatmap gets two SSDraw-style strips
+beneath it, sharing its x axis position for position: **helices as coiled
+ribbons, strands as arrows pointing towards the C terminus, loops as thin
+bars**, and a hairline where the model does not cover the position.
+
+```bash
+dms-heatmap --input data/raw --output results --structures data/structures
+```
+
+The shape says where a residue sits in the fold. The **colour** says what
+mutating it does, and the two strips colour the same shapes two ways:
+
+| Strip | Coloured by |
+|---|---|
+| `→P` | the proline substitution at that position |
+| `mean` | the mean of all substitutions measured at that position |
+
+Both take the heatmap's own colormap and its own limits, so a red helix turn
+means exactly what a red cell means, and `--shared-scale` puts the strips of
+every dataset in the run on one scale too. Proline is the default first strip
+(`--structure-residue`) because it is the substitution whose effect is a
+statement about the backbone — it cannot donate a backbone hydrogen bond and it
+kinks the chain — so an intolerant helix shows up as a red element while the
+loops either side stay pale. The mean excludes nonsense variants by default
+(`--structure-mean-with-stops` to include them): a stop is not one substitution
+among twenty, its effect grows with how much of the protein it removes, and
+averaging it in tilts every position's mean by an amount that says more about
+where the position sits in the sequence than about the residue.
+
+Two things to know when reading the strips:
+
+- **A position mean spans a narrower range than a single substitution.** The
+  colour limits are percentiles of the *cells*, so the mean strip cannot reach
+  the ends of the ramp as often as the cells do and legitimately looks milder.
+  The figure caption says so.
+- **Colour inside a shape is per residue, not per element.** A single helix
+  carries a different colour on every turn. The colour is painted as a strip
+  and clipped to the outline of the shapes, which is the only way to do that
+  for a coil without visible seams.
+
+**Where the structure comes from.** A file or a folder searched recursively,
+matched to a dataset by filename — `tna1.pdb`, `tna1_alphafold.cif` and
+`TNA1.dssp` all belong to dataset `tna1`, and a lone structure with a lone
+dataset is paired whatever it is called. Four formats are read directly, with
+no extra dependencies:
+
+| | |
+|---|---|
+| `*.dssp` | DSSP output; the eight-state code is collapsed to helix/strand/loop |
+| `*.pdb` `*.ent` | `HELIX`/`SHEET` records, first model only |
+| `*.cif` `*.mmcif` | the `_struct_conf` loop |
+| `*.ss` | a bare `HHHEEELL` string, FASTA-style header optional |
+
+A coordinate file carrying no secondary-structure records — which is the normal
+case for a predicted model — is passed to `mkdssp` (or `dssp`) if one is on
+`PATH`. If neither is, the strips would read as flat loop from end to end, so
+the run says so and records it in the manifest rather than drawing a structure
+nobody asserted.
+
+**Numbering is checked, not assumed.** A structure numbered by author
+numbering, a model of one domain, or a construct with a tag each put residue
+*i* of the model at a different position of the assayed protein, and a silently
+shifted structure strip is worse than no strip at all. So the offset is
+*derived*: the model's own sequence is matched against the wild-type protein
+sequence from the dataset, the identity achieved goes into `run_manifest.json`,
+and a structure that cannot be placed is refused with a warning instead of
+drawn in the wrong frame. A domain model of residues 60–180 numbered 1–121
+lands at offset +59 on its own. `--structure-offset` overrides the search;
+`--structure-chain` picks a chain out of a multi-chain file.
+
+### 6. Render the distribution
 
 Alongside each heatmap the pipeline draws the distribution of normalised
 fitness split by variant class — **missense blue, synonymous green, nonsense
@@ -243,7 +320,9 @@ results/
 ├── tables/
 │   ├── tna1.normalised.tsv   # one row per variant: fitness, sd, n_replicates,
 │   │                         #   and the per-replicate normalised values
-│   └── tna1.matrix.tsv       # the residue × position grid behind the figure
+│   ├── tna1.matrix.tsv       # the residue × position grid behind the figure
+│   └── tna1.structure.tsv    # one row per position: secondary structure and
+│                             #   the two values the strips are coloured by
 ├── summary.tsv               # one row per dataset: counts, coverage, limits,
 │                             #   worst replicate correlation, warning count,
 │                             #   and the per-class medians that must read 1/0
@@ -253,9 +332,11 @@ results/
 `run_manifest.json` records the resolved configuration, package versions, and
 per dataset: variant counts, coverage, **the anchor values and sample sizes for
 every replicate**, pairwise replicate correlations, the fitness quantiles, the
-per-class distribution summaries, the colour limits actually used, every
-warning, and the files written. A figure can always be traced back to the
-numbers and settings that produced it.
+per-class distribution summaries, the colour limits actually used, **the
+secondary structure — its source, chain, the numbering offset applied and the
+sequence identity that justified it, the helix/strand/loop composition, and a
+summary of each strip** — every warning, and the files written. A figure can
+always be traced back to the numbers and settings that produced it.
 
 ## Configuration
 
@@ -278,6 +359,12 @@ option with its default.
 | `--no-wt-marks` | off | drop the wild-type dots |
 | `--formats` | `png pdf` | figure formats |
 | `--no-tables` | off | figures only |
+| `--structures` | none | structure file or folder for the secondary-structure strips |
+| `--no-structure-tracks` | off | ignore `--structures` and draw the heatmap alone |
+| `--structure-residue` | `P` | residue whose substitution colours the first strip |
+| `--structure-mean-with-stops` | off | average nonsense into the mean strip too |
+| `--structure-offset` | auto | add N to the structure's residue numbers |
+| `--structure-chain` | first | chain to read from a multi-chain structure |
 | `--no-distribution` | off | skip the per-class distribution figure |
 | `--distribution-smoothing` | `1.0` | kernel bandwidth multiplier; `0` for a step histogram |
 | `--distribution-bins` | `60` | reference bin width for the y axis (and bins in step mode) |
@@ -315,8 +402,13 @@ canonicalisation and schema validation, matrix reshaping and gap preservation,
 colour-limit derivation including the degenerate cases, class splitting, and
 the kernel density (that it integrates to the variant count, peaks on the
 mode, resolves two modes rather than merging them, and that its bandwidth
-resists a heavy tail). An end-to-end run checks the written outputs. No test
-needs the real data.
+resists a heavy tail). For the secondary structure it covers all four input
+formats against fixed-column fixtures, chain selection, the eight-to-three
+state collapse, and the placement rules that matter most — that a domain model
+is found by its sequence, that a structure of the wrong protein is refused
+rather than drawn, and that an element cut by a block boundary keeps its coil
+phase and does not grow a second arrowhead. An end-to-end run checks the
+written outputs. No test needs the real data.
 
 ## Project layout
 
@@ -327,6 +419,8 @@ src/dms_heatmap/
 ├── matrix.py      # long variant table → residue × position grid
 ├── scale.py       # percentile colour limits and the diverging norm
 ├── palette.py     # the lightness-matched red↔blue ramp, class colours
+├── structure.py   # DSSP/PDB/mmCIF/string → three-state codes, placed on the protein
+├── track.py       # SSDraw-style ribbons, coloured by fitness
 ├── plot.py        # heatmap geometry and rendering
 ├── distribution.py # per-class fitness histogram
 ├── pipeline.py    # orchestration, QC, manifest
