@@ -97,6 +97,7 @@ class PipelineConfig:
     distribution_bins: int = 60
     distribution_layout: str = "overlay"
     distribution_trim: float = 0.005
+    distribution_smoothing: float = 1.0
 
     # Outputs
     write_tables: bool = True
@@ -113,6 +114,7 @@ class PipelineConfig:
             bins=self.distribution_bins,
             layout=self.distribution_layout,
             trim=self.distribution_trim,
+            smoothing=self.distribution_smoothing,
         )
 
     def as_dict(self) -> dict:

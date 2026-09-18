@@ -60,6 +60,15 @@ formats = ["png", "pdf"]
 # (green), nonsense (red). This is the normalisation's own sanity check --
 # synonymous should pile up on 1 and nonsense on 0.
 distribution = true
+
+# Kernel bandwidth multiplier for the smooth density curve. 1.0 is Silverman's
+# rule of thumb per class; above 1 is smoother, below 1 follows the data more
+# closely. 0 draws a step histogram instead of a curve.
+distribution_smoothing = 1.0
+
+# Reference bin width for the y axis: the curve's height is "variants per this
+# many fitness units", so the axis still reads as counts. Also the bin count
+# used when distribution_smoothing = 0.
 distribution_bins = 60
 
 # "overlay" puts all three on one pair of axes (what you usually want);
@@ -68,10 +77,13 @@ distribution_bins = 60
 # outnumbers nonsense 18:1, so the nonsense peak is a low bump in overlay.
 distribution_layout = "overlay"
 
-# Quantile trimmed from each end to set the axis range. Trimmed variants are
-# still counted, in the end bins -- nothing is dropped from the histogram.
-# At 0.001 a handful of noisy outliers stretch tna1's axis out to 6.3 and
-# squash the real structure; 0.005 gives -0.86 to 3.07.
+# Quantile trimmed from each end to set the axis range. At 0.001 a handful of
+# noisy outliers stretch tna1's axis out to 6.3 and squash the real structure;
+# 0.005 gives -0.86 to 3.07. Trimmed variants are never dropped from the
+# calculation: in step mode they are counted in the end bins, and in smooth
+# mode they still contribute to the curve near the edge (the kernel is
+# evaluated on a padded grid) -- they are simply off the visible axis, and the
+# caption says how many.
 distribution_trim = 0.005
 
 # --- outputs --------------------------------------------------------------

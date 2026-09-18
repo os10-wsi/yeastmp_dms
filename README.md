@@ -185,10 +185,19 @@ protein render at the same scale and can be laid side by side.
 
 ### 5. Render the distribution
 
-Alongside each heatmap the pipeline draws a histogram of normalised fitness
-split by variant class — **missense blue, synonymous green, nonsense red** —
-with counts on the y axis and all three classes sharing one set of bin edges,
-so the bars are comparable across classes and not just within one.
+Alongside each heatmap the pipeline draws the distribution of normalised
+fitness split by variant class — **missense blue, synonymous green, nonsense
+red** — as smooth curves on a shared grid, so they are comparable across
+classes and not just within one.
+
+The curve is a Gaussian kernel density **scaled to counts**, not to unit area:
+its height at *x* is how many variants fall in a bin-width window there, so
+the y axis still answers "how many variants are around here" — it is a
+histogram with the chunking taken out, not a change of units. Bandwidth is
+Silverman's rule per class, computed against the smaller of the standard
+deviation and IQR/1.34 so a tail of noisy outliers cannot smear out the real
+modes. `--distribution-smoothing` scales it: above 1 is smoother, below 1
+follows the data more closely, and **0 goes back to a step histogram**.
 
 This is the plot that tells you whether the normalisation worked. Synonymous
 variants must pile up on 1 and nonsense variants on 0, because that is what
@@ -201,10 +210,13 @@ Details that matter for reading it:
 - Vertical dashed lines mark both anchors, so you are not doing the
   arithmetic off the axis.
 - The axis range comes from a quantile trim (`--distribution-trim`, default
-  0.005), and **trimmed variants are still counted, in the end bins** —
-  nothing silently disappears from a histogram. At 0.001 a dozen noisy
-  outliers stretch TNA1's axis to 6.3 and squash all the structure; at 0.005
-  it runs −0.86 to 3.07.
+  0.005). At 0.001 a dozen noisy outliers stretch TNA1's axis to 6.3 and
+  squash all the structure; at 0.005 it runs −0.86 to 3.07. Trimmed variants
+  are never dropped from the calculation — the kernel is evaluated on a
+  padded grid, so data just outside the limits still shapes the curve at the
+  edge rather than letting it decay to zero for want of neighbours. They are
+  simply off the visible axis, and the caption says how many. (In step mode
+  they go into the end bins instead.)
 - Class colours were chosen by running the trio through a colour-vision
   check, not by eye. The obvious saturated green against a mid red lands at
   protanope ΔE 7.2 — inside the band where a palette is only legal with
@@ -267,7 +279,8 @@ option with its default.
 | `--formats` | `png pdf` | figure formats |
 | `--no-tables` | off | figures only |
 | `--no-distribution` | off | skip the per-class distribution figure |
-| `--distribution-bins` | `60` | histogram bins, shared by all three classes |
+| `--distribution-smoothing` | `1.0` | kernel bandwidth multiplier; `0` for a step histogram |
+| `--distribution-bins` | `60` | reference bin width for the y axis (and bins in step mode) |
 | `--distribution-layout` | `overlay` | `overlay` or `facet` (one panel per class) |
 | `--distribution-trim` | `0.005` | quantile trimmed from each end of the axis |
 
@@ -299,9 +312,11 @@ make test        # or: .venv/bin/pytest
 The suite covers the normalisation maths against a synthetic dataset with known
 anchors (including the per-replicate dynamic-range behaviour), column
 canonicalisation and schema validation, matrix reshaping and gap preservation,
-colour-limit derivation including the degenerate cases, class splitting and
-histogram binning, and an end-to-end run that checks the written outputs. No
-test needs the real data.
+colour-limit derivation including the degenerate cases, class splitting, and
+the kernel density (that it integrates to the variant count, peaks on the
+mode, resolves two modes rather than merging them, and that its bandwidth
+resists a heavy tail). An end-to-end run checks the written outputs. No test
+needs the real data.
 
 ## Project layout
 

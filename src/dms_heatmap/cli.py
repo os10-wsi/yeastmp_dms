@@ -165,6 +165,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     group.add_argument(
+        "--distribution-smoothing", type=float, metavar="F",
+        help=helptext(
+            "distribution_smoothing",
+            "kernel bandwidth multiplier for the smooth density curve: above 1 "
+            "is smoother, below 1 follows the data more closely, and 0 draws a "
+            "step histogram instead",
+        ),
+    )
+    group.add_argument(
         "--distribution-trim", type=float, metavar="Q",
         help=helptext(
             "distribution_trim",
