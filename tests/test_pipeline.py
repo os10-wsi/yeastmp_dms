@@ -36,6 +36,7 @@ def test_run_processes_every_dataset_in_the_tree(folder, tmp_path):
     assert sorted(r.name for r in results) == ["gene1", "gene2"]
     for name in ("gene1", "gene2"):
         assert (config.output / "figures" / f"{name}.png").exists()
+        assert (config.output / "figures" / f"{name}.distribution.png").exists()
         assert (config.output / "tables" / f"{name}.normalised.tsv").exists()
         assert (config.output / "tables" / f"{name}.matrix.tsv").exists()
     assert (config.output / "summary.tsv").exists()
@@ -79,6 +80,34 @@ def test_manifest_records_provenance(folder, tmp_path):
     assert "q0.50" in dataset["fitness_quantiles"]
     assert dataset["read_depth"]["fraction_retained"]["20"] < 1.0
     assert any("below 20" in w for w in dataset["warnings"])
+
+
+def test_distribution_can_be_switched_off(folder, tmp_path):
+    config = _config(folder, tmp_path, distribution=False)
+    run(config)
+    assert (config.output / "figures" / "gene1.png").exists()
+    assert not (config.output / "figures" / "gene1.distribution.png").exists()
+
+
+def test_manifest_records_the_class_distribution(folder, tmp_path):
+    config = _config(folder, tmp_path)
+    run(config)
+
+    manifest = json.loads((config.output / "run_manifest.json").read_text())
+    classes = next(d for d in manifest["datasets"] if d["dataset"] == "gene1")[
+        "class_distribution"
+    ]
+    assert set(classes) == {"missense", "synonymous", "nonsense"}
+    assert classes["synonymous"]["median"] == pytest.approx(1.0)
+    assert classes["nonsense"]["median"] == pytest.approx(0.0)
+
+
+def test_summary_carries_the_normalisation_sanity_check(folder, tmp_path):
+    config = _config(folder, tmp_path)
+    run(config)
+    summary = pd.read_csv(config.output / "summary.tsv", sep="\t")
+    assert summary["synonymous_median"].eq(1.0).all()
+    assert summary["nonsense_median"].eq(0.0).all()
 
 
 def test_shared_scale_gives_every_dataset_the_same_limits(folder, tmp_path):

@@ -25,7 +25,7 @@ from .matrix import FitnessMatrix
 from .palette import MISSING, WT_MARK, fitness_cmap
 from .scale import ColourScale
 
-__all__ = ["HeatmapStyle", "render_heatmap", "save_heatmap"]
+__all__ = ["HeatmapStyle", "render_heatmap", "save_figure"]
 
 SURFACE = "#fcfcfb"
 TEXT_PRIMARY = "#0b0b0b"
@@ -307,13 +307,18 @@ def _add_footer(fig, matrix, scale, style, fig_width, fig_height) -> None:
     )
 
 
-def save_heatmap(fig: Figure, stem: Path, formats=("png", "pdf")) -> list[Path]:
-    """Write the figure to ``stem.<ext>`` for each requested format."""
+def save_figure(fig: Figure, stem: Path, formats=("png", "pdf")) -> list[Path]:
+    """Write the figure to ``stem.<ext>`` for each requested format.
+
+    The extension is appended rather than substituted: stems here contain
+    dots (``tna1.distribution``), and ``with_suffix`` would replace that last
+    component instead of adding to it.
+    """
     written: list[Path] = []
     stem = Path(stem)
     stem.parent.mkdir(parents=True, exist_ok=True)
     for extension in formats:
-        out = stem.with_suffix(f".{extension}")
+        out = stem.with_name(f"{stem.name}.{extension}")
         fig.savefig(out, facecolor=fig.get_facecolor())
         written.append(out)
     plt.close(fig)

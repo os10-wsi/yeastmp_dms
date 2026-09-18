@@ -24,6 +24,8 @@ from matplotlib.colors import LinearSegmentedColormap
 
 __all__ = [
     "BLUE_RAMP",
+    "CLASS_COLOURS",
+    "CLASS_LINESTYLES",
     "RED_RAMP",
     "NEUTRAL",
     "MISSING",
@@ -55,6 +57,32 @@ MISSING = "#c6c5bf"
 
 #: Marker ink for the wild-type residue at each position.
 WT_MARK = "#0b0b0b"
+
+
+#: Colours for the three variant classes in the distribution plot.
+#:
+#: Blue is ``BLUE_RAMP`` step 450 and red is ``RED_RAMP`` step 550, so the two
+#: figures share their ink.  Green is new, and its step was chosen by running
+#: the trio through a colour-vision-deficiency check rather than by eye: a
+#: saturated green against a mid red is the classic red/green failure, and the
+#: obvious pairing (``#008300`` with ``#e34948``) lands at protanope Delta E 7.2
+#: -- inside the band where a palette is only legal with secondary encoding.
+#: This trio's worst all-pairs separation is Delta E 15.0 (deutan), with
+#: normal-vision 29.1 and every colour above 3:1 contrast on the surface.
+CLASS_COLOURS: dict[str, str] = {
+    "missense": "#2a78d6",
+    "synonymous": "#00a83d",
+    "nonsense": "#9e3432",
+}
+
+#: Line style per class.  Redundant with colour on screen, but it is what keeps
+#: the three curves apart in greyscale print and under any residual colour
+#: confusion.
+CLASS_LINESTYLES: dict[str, object] = {
+    "missense": "solid",
+    "synonymous": (0, (5, 1.6)),
+    "nonsense": (0, (1.4, 1.4)),
+}
 
 
 def fitness_cmap(name: str = "dms_fitness") -> LinearSegmentedColormap:

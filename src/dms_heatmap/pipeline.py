@@ -29,6 +29,7 @@ from .dataset import (
     input_count_columns,
     load,
 )
+from .distribution import DistributionStyle, render_distribution
 from .matrix import FitnessMatrix, build_matrix
 from .normalise import (
     Anchors,
@@ -38,7 +39,7 @@ from .normalise import (
     normalise,
     wild_type_mask,
 )
-from .plot import HeatmapStyle, render_heatmap, save_heatmap
+from .plot import HeatmapStyle, render_heatmap, save_figure
 from .scale import WT_FITNESS, ColourScale
 
 __all__ = ["PipelineConfig", "DatasetResult", "run"]
@@ -91,6 +92,12 @@ class PipelineConfig:
     mark_wild_type: bool = True
     formats: tuple[str, ...] = ("png", "pdf")
 
+    # Distribution figure
+    distribution: bool = True
+    distribution_bins: int = 60
+    distribution_layout: str = "overlay"
+    distribution_trim: float = 0.005
+
     # Outputs
     write_tables: bool = True
 
@@ -99,6 +106,13 @@ class PipelineConfig:
             block_size=self.block_size,
             tick_every=self.tick_every,
             mark_wild_type=self.mark_wild_type,
+        )
+
+    def distribution_style(self) -> DistributionStyle:
+        return DistributionStyle(
+            bins=self.distribution_bins,
+            layout=self.distribution_layout,
+            trim=self.distribution_trim,
         )
 
     def as_dict(self) -> dict:
@@ -125,6 +139,7 @@ class DatasetResult:
     replicate_correlations: dict[str, float]
     fitness_quantiles: dict[str, float]
     read_depth: dict = field(default_factory=dict)
+    class_distribution: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     outputs: list[Path] = field(default_factory=list)
     scale: ColourScale | None = None
@@ -142,6 +157,7 @@ class DatasetResult:
             "replicate_correlations": self.replicate_correlations,
             "fitness_quantiles": self.fitness_quantiles,
             "read_depth": self.read_depth,
+            "class_distribution": self.class_distribution,
             "colour_scale": self.scale.as_dict() if self.scale else None,
             "warnings": self.warnings,
             "outputs": [str(p) for p in self.outputs],
@@ -263,6 +279,42 @@ def _write_tables(
     return [tidy, wide]
 
 
+def _filter_note(config: PipelineConfig) -> list[str]:
+    """How the plotted set was restricted, for the figure subtitles."""
+    parts = []
+    if config.min_replicates > 1:
+        parts.append(f"at least {config.min_replicates} replicates per variant")
+    if config.min_input_count > 0:
+        parts.append(f"filtered to >={config.min_input_count} input reads per replicate")
+    return parts
+
+
+def _render_distribution(
+    table: pd.DataFrame,
+    dataset: Dataset,
+    result: DatasetResult,
+    config: PipelineConfig,
+    figures_dir: Path,
+) -> list[Path]:
+    """Draw and save the per-class fitness distribution."""
+    subtitle = "  |  ".join(
+        [
+            "synonymous variants should sit on 1 and nonsense on 0 by construction",
+            *_filter_note(config),
+        ]
+    )
+    figure, series = render_distribution(
+        table,
+        dataset=dataset.name,
+        style=config.distribution_style(),
+        subtitle=subtitle,
+    )
+    result.class_distribution = {s.name: s.as_dict() for s in series}
+    return save_figure(
+        figure, figures_dir / f"{dataset.name}.distribution", formats=config.formats
+    )
+
+
 def _subtitle(config: PipelineConfig, result: DatasetResult, scale: ColourScale) -> str:
     reps = len(result.anchors)
     centre = (
@@ -277,13 +329,10 @@ def _subtitle(config: PipelineConfig, result: DatasetResult, scale: ColourScale)
     parts = [
         f"{result.n_missense:,} substitutions and {result.n_nonsense:,} nonsense "
         f"variants over {reps} replicates",
+        *_filter_note(config),
         "red = loss of function, blue = gain",
         centre,
     ]
-    if config.min_input_count > 0:
-        parts.insert(1, f"filtered to >={config.min_input_count} input reads per replicate")
-    if config.min_replicates > 1:
-        parts.insert(1, f"at least {config.min_replicates} replicates per variant")
     return "  |  ".join(parts)
 
 
@@ -324,6 +373,12 @@ def run(config: PipelineConfig) -> list[DatasetResult]:
 
         if config.write_tables:
             result.outputs.extend(_write_tables(table, matrix, dataset, tables_dir))
+        if config.distribution:
+            # Independent of the heatmap's colour limits, so it is rendered
+            # here and the (large) normalised table can be released.
+            result.outputs.extend(
+                _render_distribution(table, dataset, result, config, figures_dir)
+            )
         prepared.append((dataset, matrix, result))
 
     if not prepared:
@@ -363,13 +418,18 @@ def run(config: PipelineConfig) -> list[DatasetResult]:
             title=f"{dataset.name} - deep mutational scanning fitness",
             subtitle=_subtitle(config, result, scale),
         )
-        written = save_heatmap(figure, figures_dir / dataset.name, formats=config.formats)
+        written = save_figure(figure, figures_dir / dataset.name, formats=config.formats)
         result.outputs.extend(written)
         log.info("%s: wrote %s", dataset.name, ", ".join(p.name for p in written))
 
     results = [r for _, _, r in prepared]
     _write_summary(results, failures, config)
     return results
+
+
+def _class_median(result: DatasetResult, name: str):
+    value = result.class_distribution.get(name, {}).get("median")
+    return round(value, 4) if value is not None else None
 
 
 def _write_summary(
@@ -386,6 +446,10 @@ def _write_summary(
                 "n_wild_type_protein": r.n_wild_type,
                 "coverage": round(r.coverage, 4),
                 "median_fitness": round(r.fitness_quantiles.get("q0.50", float("nan")), 4),
+                # Sanity check on the normalisation: these must be 1 and 0.
+                "synonymous_median": _class_median(r, "synonymous"),
+                "nonsense_median": _class_median(r, "nonsense"),
+                "missense_median": _class_median(r, "missense"),
                 "vmin": round(r.scale.vmin, 4) if r.scale else None,
                 "vmax": round(r.scale.vmax, 4) if r.scale else None,
                 "min_replicate_r": (

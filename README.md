@@ -23,7 +23,8 @@ QC record.
   - [1. Load and validate](#1-load-and-validate)
   - [2. Normalise](#2-normalise-wild-type--1-nonsense--0)
   - [3. Colour](#3-colour)
-  - [4. Render](#4-render)
+  - [4. Render the heatmap](#4-render-the-heatmap)
+  - [5. Render the distribution](#5-render-the-distribution)
 - [Outputs](#outputs)
 - [Configuration](#configuration)
 - [Two things worth knowing about the input data](#two-things-worth-knowing-about-the-input-data)
@@ -165,7 +166,7 @@ By default each dataset gets its own limits. `--shared-scale` pools every
 dataset in the run and gives them one common scale, which is what you want when
 comparing genes side by side.
 
-### 4. Render
+### 4. Render the heatmap
 
 Rows are the 20 amino acids plus a nonsense (`*`) row, ordered by side-chain
 chemistry by default (`--aa-order alphabetical` for the other option).
@@ -182,27 +183,67 @@ protein render at the same scale and can be laid side by side.
   stay as empty columns rather than being closed up, so the position axis
   always means the real residue number.
 
+### 5. Render the distribution
+
+Alongside each heatmap the pipeline draws a histogram of normalised fitness
+split by variant class — **missense blue, synonymous green, nonsense red** —
+with counts on the y axis and all three classes sharing one set of bin edges,
+so the bars are comparable across classes and not just within one.
+
+This is the plot that tells you whether the normalisation worked. Synonymous
+variants must pile up on 1 and nonsense variants on 0, because that is what
+the anchors were defined to do; if they do not, something upstream is wrong.
+On TNA1 they land on 1.00 and −0.01. The shape of the missense distribution
+between the two modes is then the actual result of the screen.
+
+Details that matter for reading it:
+
+- Vertical dashed lines mark both anchors, so you are not doing the
+  arithmetic off the axis.
+- The axis range comes from a quantile trim (`--distribution-trim`, default
+  0.005), and **trimmed variants are still counted, in the end bins** —
+  nothing silently disappears from a histogram. At 0.001 a dozen noisy
+  outliers stretch TNA1's axis to 6.3 and squash all the structure; at 0.005
+  it runs −0.86 to 3.07.
+- Class colours were chosen by running the trio through a colour-vision
+  check, not by eye. The obvious saturated green against a mid red lands at
+  protanope ΔE 7.2 — inside the band where a palette is only legal with
+  secondary encoding. These three clear it at ΔE 15.0. Blue and red are
+  steps from the heatmap's own ramps, so the two figures share their ink.
+  Each class also gets its own line style, which is what keeps them apart
+  in greyscale print.
+- In TNA1 missense outnumbers nonsense 18:1, so the nonsense peak is a low
+  bump on the shared count axis. `--distribution-layout facet` stacks the
+  three classes in panels sharing the x axis, each with its own count axis,
+  which is the fix when one class dwarfs the others.
+
+`--no-distribution` skips it; `--distribution-bins` sets the bin count.
+
 ## Outputs
 
 ```
 results/
 ├── figures/
-│   ├── tna1.png              # 300 dpi
-│   └── tna1.pdf              # vector, for figure assembly
+│   ├── tna1.png                  # heatmap, 300 dpi
+│   ├── tna1.pdf                  # vector, for figure assembly
+│   ├── tna1.distribution.png     # per-class fitness histogram
+│   └── tna1.distribution.pdf
 ├── tables/
 │   ├── tna1.normalised.tsv   # one row per variant: fitness, sd, n_replicates,
 │   │                         #   and the per-replicate normalised values
 │   └── tna1.matrix.tsv       # the residue × position grid behind the figure
 ├── summary.tsv               # one row per dataset: counts, coverage, limits,
-│                             #   worst replicate correlation, warning count
+│                             #   worst replicate correlation, warning count,
+│                             #   and the per-class medians that must read 1/0
 └── run_manifest.json         # full provenance (below)
 ```
 
 `run_manifest.json` records the resolved configuration, package versions, and
 per dataset: variant counts, coverage, **the anchor values and sample sizes for
 every replicate**, pairwise replicate correlations, the fitness quantiles, the
-colour limits actually used, every warning, and the files written. A figure can
-always be traced back to the numbers and settings that produced it.
+per-class distribution summaries, the colour limits actually used, every
+warning, and the files written. A figure can always be traced back to the
+numbers and settings that produced it.
 
 ## Configuration
 
@@ -225,6 +266,10 @@ option with its default.
 | `--no-wt-marks` | off | drop the wild-type dots |
 | `--formats` | `png pdf` | figure formats |
 | `--no-tables` | off | figures only |
+| `--no-distribution` | off | skip the per-class distribution figure |
+| `--distribution-bins` | `60` | histogram bins, shared by all three classes |
+| `--distribution-layout` | `overlay` | `overlay` or `facet` (one panel per class) |
+| `--distribution-trim` | `0.005` | quantile trimmed from each end of the axis |
 
 ## Two things worth knowing about the input data
 
@@ -254,8 +299,9 @@ make test        # or: .venv/bin/pytest
 The suite covers the normalisation maths against a synthetic dataset with known
 anchors (including the per-replicate dynamic-range behaviour), column
 canonicalisation and schema validation, matrix reshaping and gap preservation,
-colour-limit derivation including the degenerate cases, and an end-to-end run
-that checks the written outputs. No test needs the real data.
+colour-limit derivation including the degenerate cases, class splitting and
+histogram binning, and an end-to-end run that checks the written outputs. No
+test needs the real data.
 
 ## Project layout
 
@@ -265,8 +311,9 @@ src/dms_heatmap/
 ├── normalise.py   # per-replicate anchoring to wild type = 1 / nonsense = 0
 ├── matrix.py      # long variant table → residue × position grid
 ├── scale.py       # percentile colour limits and the diverging norm
-├── palette.py     # the lightness-matched red↔blue ramp
-├── plot.py        # figure geometry and rendering
+├── palette.py     # the lightness-matched red↔blue ramp, class colours
+├── plot.py        # heatmap geometry and rendering
+├── distribution.py # per-class fitness histogram
 ├── pipeline.py    # orchestration, QC, manifest
 └── cli.py         # argument parsing and config merging
 ```

@@ -55,5 +55,24 @@ tick_every = 10           # position axis tick interval
 mark_wild_type = true     # dot the wild-type residue in each column
 formats = ["png", "pdf"]
 
+# --- distribution figure --------------------------------------------------
+# Fitness histogram of the three variant classes: missense (blue), synonymous
+# (green), nonsense (red). This is the normalisation's own sanity check --
+# synonymous should pile up on 1 and nonsense on 0.
+distribution = true
+distribution_bins = 60
+
+# "overlay" puts all three on one pair of axes (what you usually want);
+# "facet" stacks them in panels sharing the x axis, each with its own count
+# axis, which is the fix when one class dwarfs the others. In tna1 missense
+# outnumbers nonsense 18:1, so the nonsense peak is a low bump in overlay.
+distribution_layout = "overlay"
+
+# Quantile trimmed from each end to set the axis range. Trimmed variants are
+# still counted, in the end bins -- nothing is dropped from the histogram.
+# At 0.001 a handful of noisy outliers stretch tna1's axis out to 6.3 and
+# squash the real structure; 0.005 gives -0.86 to 3.07.
+distribution_trim = 0.005
+
 # --- outputs --------------------------------------------------------------
 write_tables = true       # normalised.tsv and matrix.tsv alongside the figures

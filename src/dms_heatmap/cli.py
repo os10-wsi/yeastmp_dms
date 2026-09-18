@@ -146,6 +146,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="render figures only, skip the normalised output tables",
     )
 
+    group = parser.add_argument_group("distribution figure")
+    group.add_argument(
+        "--no-distribution", dest="distribution", action="store_false", default=None,
+        help="skip the per-class fitness distribution figure",
+    )
+    group.add_argument(
+        "--distribution-bins", type=int, metavar="N",
+        help=helptext("distribution_bins", "histogram bins, shared by all three classes"),
+    )
+    group.add_argument(
+        "--distribution-layout", choices=("overlay", "facet"),
+        help=helptext(
+            "distribution_layout",
+            "'overlay' puts all three classes on one pair of axes; 'facet' stacks "
+            "them in panels sharing the x axis, each with its own count axis, which "
+            "is what to use when one class dwarfs the others",
+        ),
+    )
+    group.add_argument(
+        "--distribution-trim", type=float, metavar="Q",
+        help=helptext(
+            "distribution_trim",
+            "quantile trimmed from each end to set the axis range; the trimmed "
+            "variants are still counted, in the end bins",
+        ),
+    )
+
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="debug level logging"
     )
