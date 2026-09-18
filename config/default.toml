@@ -1,0 +1,59 @@
+# Default settings for the DMS heatmap pipeline.
+#
+#   dms-heatmap --config config/default.toml
+#
+# Every key here matches a command line flag (dashes or underscores both work),
+# and any flag given on the command line overrides the value set here.
+# The settings actually used are recorded in results/run_manifest.json.
+
+[dms_heatmap]
+
+# --- input / output -------------------------------------------------------
+input = "data/raw"       # a file, or a folder searched recursively
+output = "results"
+patterns = ["*.tsv", "*.csv"]
+
+# --- quality filtering ----------------------------------------------------
+# Applied before the anchors are computed. Variants are dropped if ANY
+# replicate has fewer than this many input reads. 0 disables filtering.
+#
+# Set this deliberately. In tna1, 34 % of variants have fewer than 20 input
+# reads in at least one replicate; their replicate-to-replicate SD is about
+# 0.55 on the normalised scale against 0.25 for variants above 100 reads, so
+# they contribute mostly sampling noise to the figure. 20 is a common
+# threshold, but it is a judgement about your libraries, not a universal
+# constant, so the default here is off.
+min_input_count = 0
+
+# Blank variants measured in fewer than this many replicates.
+min_replicates = 1
+
+# --- normalisation --------------------------------------------------------
+# Wild type = 1, nonsense = 0, anchored per replicate.
+# "median" (default) or "mean".
+anchor_statistic = "median"
+
+# --- colour scale ---------------------------------------------------------
+# Everything at or below lower_quantile takes the deepest red; everything at
+# or above upper_quantile takes the deepest blue.
+lower_quantile = 0.10
+upper_quantile = 0.90
+
+# Where neutral grey sits: "wt" (1.0), "none" for a plain ramp between the
+# limits, or a number such as 0.5.
+center = "wt"
+
+# One colour scale pooled across every dataset in the run (true), or limits
+# from each dataset's own distribution (false).
+shared_scale = false
+
+# --- figure ---------------------------------------------------------------
+block_size = 100          # positions per stacked block
+aa_order = "chemistry"    # "chemistry" or "alphabetical"
+include_stops = true      # show the nonsense row
+tick_every = 10           # position axis tick interval
+mark_wild_type = true     # dot the wild-type residue in each column
+formats = ["png", "pdf"]
+
+# --- outputs --------------------------------------------------------------
+write_tables = true       # normalised.tsv and matrix.tsv alongside the figures

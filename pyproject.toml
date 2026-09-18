@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dms-heatmap"
+version = "0.1.0"
+description = "Reproducible normalisation and heatmap rendering for yeast membrane-protein DMS fitness datasets"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+dms-heatmap = "dms_heatmap.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dms_heatmap"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
